@@ -1,0 +1,179 @@
+function doPost(e) {
+  try {
+    // แปลงข้อมูล JSON ที่ได้รับจาก LINE
+    var contents = JSON.parse(e.postData.contents);
+    var events = contents.events;
+    
+    if (events && events.length > 0) {
+      var event = events[0];
+      var replyToken = event.replyToken;           // token สำหรับตอบกลับข้อความ
+      var userMessage = event.message.text;          // ข้อความจากผู้ใช้ (รหัสนักเรียน)
+
+      // เปิด Google Sheet โดยใช้ ID ที่กำหนด และเลือก Sheet ที่ต้องการใช้งาน
+      var ss = SpreadsheetApp.openById("YOUR_SHEET_ID");
+      var sheet = ss.getSheetByName("Sheet1");       // เปลี่ยนชื่อ Sheet ตามที่คุณใช้งาน
+
+      // ดึงข้อมูลทั้งหมดใน Sheet (สมมติว่าแถวแรกเป็น header)
+      var data = sheet.getDataRange().getValues();
+      
+      // ค้นหาข้อมูลนักเรียนตามรหัสที่ผู้ใช้ส่งเข้ามา
+      // โดยจะดึงข้อมูลทั้งหมดที่มีรหัสนักเรียนตรงกัน
+      var results = [];
+      for (var i = 1; i < data.length; i++) {
+        var id = data[i][0];
+        if (id.toString() === userMessage) { // เปรียบเทียบเป็น string
+          results.push({
+            id: data[i][0],
+            name: data[i][1],
+            score: data[i][2],
+            subject: data[i][3]
+          });
+        }
+      }
+
+      var message;
+      if (results.length > 0) {
+        // สร้าง Flex Message แบบ Carousel โดยวนลูปสร้าง bubble สำหรับแต่ละรายการ
+        var bubbles = [];
+        for (var j = 0; j < results.length; j++) {
+          var rec = results[j];
+          var bubble = {
+            "type": "bubble",
+            "styles": {
+              "body": {
+                "backgroundColor": "#F0F8FF"  // สีพื้นหลังอ่อนสำหรับ Bubble
+              }
+            },
+            "body": {
+              "type": "box",
+              "layout": "vertical",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "ข้อมูลนักเรียน",
+                  "weight": "bold",
+                  "size": "xl",
+                  "color": "#1DB446",
+                  "align": "center"
+                },
+                {
+                  "type": "separator",
+                  "margin": "md"
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "margin": "lg",
+                  "spacing": "sm",
+                  "contents": [
+                    {
+                      "type": "box",
+                      "layout": "baseline",
+                      "contents": [
+                        {
+                          "type": "text",
+                          "text": "ชื่อ:",
+                          "size": "sm",
+                          "color": "#555555",
+                          "flex": 0
+                        },
+                        {
+                          "type": "text",
+                          "text": rec.name,
+                          "size": "md",
+                          "color": "#111111",
+                          "align": "end"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "box",
+                      "layout": "baseline",
+                      "contents": [
+                        {
+                          "type": "text",
+                          "text": "วิชา:",
+                          "size": "sm",
+                          "color": "#555555",
+                          "flex": 0
+                        },
+                        {
+                          "type": "text",
+                          "text": rec.subject,
+                          "size": "md",
+                          "color": "#111111",
+                          "align": "end"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "box",
+                      "layout": "baseline",
+                      "contents": [
+                        {
+                          "type": "text",
+                          "text": "คะแนน:",
+                          "size": "sm",
+                          "color": "#555555",
+                          "flex": 0
+                        },
+                        {
+                          "type": "text",
+                          "text": rec.score.toString(),
+                          "size": "md",
+                          "color": "#111111",
+                          "align": "end"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          };
+          bubbles.push(bubble);
+        }
+        
+        message = {
+          "type": "flex",
+          "altText": "ข้อมูลนักเรียน",
+          "contents": {
+            "type": "carousel",
+            "contents": bubbles
+          }
+        };
+      } else {
+        // ถ้าไม่พบข้อมูลนักเรียนที่ตรงกับรหัส
+        message = {
+          "type": "text",
+          "text": "กรุณาพิมพ์รหัสนักเรียนให้ถูกต้อง"
+        };
+      }
+
+      // ตั้งค่า Payload สำหรับตอบกลับผ่าน LINE Messaging API
+      var url = "https://api.line.me/v2/bot/message/reply";
+      var payload = {
+        replyToken: replyToken,
+        messages: [message]
+      };
+      
+      var options = {
+        "method": "post",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer YOUR_CHANNEL_ACCESS_TOKEN"  // ใส่ Channel Access Token ของคุณ
+        },
+        "payload": JSON.stringify(payload)
+      };
+      
+      // ส่งคำตอบกลับไปยัง LINE
+      UrlFetchApp.fetch(url, options);
+      
+      // ส่งกลับข้อความตอบรับเมื่อสำเร็จ (200 OK)
+      return ContentService.createTextOutput("OK");
+    }
+  } catch (error) {
+    Logger.log(error);
+    return ContentService.createTextOutput("Error: " + error);
+  }
+}
